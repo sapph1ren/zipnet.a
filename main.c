@@ -1,3 +1,4 @@
+
 #define MINIAUDIO_IMPLEMENTATION
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -7,12 +8,20 @@
 #include <stdlib.h>
 #include <wchar.h>
 
-#include <wolfssl/options.h>
-#include <wolfssl/ssl.h>
+#define WOLFSSL_NO_OPTIONS_H
+
+typedef void* wolfSSL_custom_ext_add_cb;
+typedef void* wolfSSL_custom_ext_free_cb;
+typedef void* wolfSSL_custom_ext_parse_cb;
+
+#include "user_settings.h"
+// #include "wolfssl/options.h"
+#include "wolfssl/ssl.h"
+
 #include <zlib.h>
 #include <opus/opus.h>
 #include "miniaudio.h"
-#include "netlib.h"
+#include "main.h"
 
 // --- СТАТИЧЕСКАЯ ПАМЯТЬ (< 10 MB) ---
 #define MAX_CHUNK_SIZE 60000
@@ -113,7 +122,7 @@ static DWORD WINAPI NetworkThread(LPVOID lpParam) {
     return 0;
 }
 
-bool NetLib_Init(const char* server_ip, uint16_t tcp_port, uint16_t udp_port, const wchar_t* ca_cert_path, uint32_t my_user_id) {
+bool zn_Init(const char* server_ip, uint16_t tcp_port, uint16_t udp_port, const wchar_t* ca_cert_path, uint32_t my_user_id) {
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);
     wolfSSL_Init();
@@ -126,7 +135,9 @@ bool NetLib_Init(const char* server_ip, uint16_t tcp_port, uint16_t udp_port, co
     wolfSSL_CTX_load_verify_locations(g_tls_ctx, cert_path_utf8, NULL);
     free(cert_path_utf8);
 
-    wolfSSL_CTX_SetOuterServerName(g_tls_ctx, "ozon.ru");
+	// wolfSSL_CTX_set_outer_server_name(g_tls_ctx, "ozon.ru");
+	wolfSSL_CTX_SetEchConfigsBase64(g_tls_ctx, "ozon.ru", 7);
+
 
     g_tcp_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     struct sockaddr_in tcp_addr = {0};
@@ -144,7 +155,7 @@ bool NetLib_Init(const char* server_ip, uint16_t tcp_port, uint16_t udp_port, co
 
 
 	
-    g_dtls_ctx = wolfSSL_CTX_new(wolfDTLSv1_2_client_method());
+    g_dtls_ctx = wolfSSL_CTX_new(wolfDTLSv1_3_client_method());
     g_udp_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     struct sockaddr_in udp_addr = tcp_addr;
     udp_addr.sin_port = htons(udp_port);
@@ -152,6 +163,7 @@ bool NetLib_Init(const char* server_ip, uint16_t tcp_port, uint16_t udp_port, co
 
     g_dtls = wolfSSL_new(g_dtls_ctx);
     wolfSSL_set_fd(g_dtls, g_udp_sock);
+    wolfSSL_UseSNI(g_dtls, WOLFSSL_SNI_HOST_NAME, "ozon.ru", 7);
     wolfSSL_connect(g_dtls);
 
     g_events[0] = WSACreateEvent(); // TCP
@@ -182,7 +194,7 @@ bool NetLib_Init(const char* server_ip, uint16_t tcp_port, uint16_t udp_port, co
     return true;
 }
 
-bool NetLib_SendText(uint64_t chat_id, uint64_t msg_id, const char* text) {
+bool zn_SendText(uint64_t chat_id, uint64_t msg_id, const char* text) {
     if (!g_tls) return false;
     uint16_t text_len = (uint16_t)strlen(text);
     
@@ -203,7 +215,7 @@ bool NetLib_SendText(uint64_t chat_id, uint64_t msg_id, const char* text) {
     return ret > 0;
 }
 
-bool NetLib_SendSystem(const char* json_str) {
+bool zn_SendSystem(const char* json_str) {
     if (!g_tls) return false;
     uint32_t json_len = (uint32_t)strlen(json_str);
 
@@ -221,7 +233,7 @@ bool NetLib_SendSystem(const char* json_str) {
     return ret > 0;
 }
 
-bool NetLib_SendMediaFile(uint64_t chat_id, uint64_t msg_id, bool is_doc, const wchar_t* file_path) {
+bool zn_SendMediaFile(uint64_t chat_id, uint64_t msg_id, bool is_doc, const wchar_t* file_path) {
     if (!g_tls) return false;
 
     FILE* fp = _wfopen(file_path, L"rb");
@@ -278,11 +290,11 @@ bool NetLib_SendMediaFile(uint64_t chat_id, uint64_t msg_id, bool is_doc, const 
     return true;
 }
 
-void NetLib_SetMicrophoneMute(bool mute) {
+void zn_SetMicrophoneMute(bool mute) {
     g_mic_muted = mute;
 }
 
-void NetLib_Shutdown() {
+void zn_Shutdown() {
     if (!g_is_running) return;
     g_is_running = false;
     

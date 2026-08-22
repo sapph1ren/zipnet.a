@@ -56,18 +56,18 @@ extern void OnNetworkPacketReceived(uint8_t type, const uint8_t* payload, uint32
 
 // Инициализация всего (Сеть, TLS, DTLS, Audio, шифрование).
 // server_ip - IP сервера, ca_cert_path - путь до сертификата (кириллица поддерживается)
-bool NetLib_Init(const char* server_ip, uint16_t tcp_port, uint16_t udp_port, const wchar_t* ca_cert_path, uint32_t my_user_id);
+bool zn_Init(const char* server_ip, uint16_t tcp_port, uint16_t udp_port, const wchar_t* ca_cert_path, uint32_t my_user_id);
 
 // Полная очистка и остановка потоков (без утечек)
-void NetLib_Shutdown();
+void zn_Shutdown();
 
 // Вкл/Выкл микрофона
-void NetLib_SetMicrophoneMute(bool mute);
+void zn_SetMicrophoneMute(bool mute);
 
 // Функции отправки (потокобезопасные)
-bool NetLib_SendText(uint64_t chat_id, uint64_t msg_id, const char* text);
-bool NetLib_SendSystem(const char* json_str);
-bool NetLib_SendMediaFile(uint64_t chat_id, uint64_t msg_id, bool is_doc, const wchar_t* file_path);
+bool zn_SendText(uint64_t chat_id, uint64_t msg_id, const char* text);
+bool zn_SendSystem(const char* json_str);
+bool zn_SendMediaFile(uint64_t chat_id, uint64_t msg_id, bool is_doc, const wchar_t* file_path);
 
 #endif // NETLIB_H
 

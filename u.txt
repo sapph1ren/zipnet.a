@@ -1,0 +1,1 @@
+gcc -c main.c -o main.o -I. -I./wolfssl -DWOLFSSL_USER_SETTINGS -std=c17 -O3 -fno-plt -ffunction-sections -fdata-sections -fno-ident -fstack-protector-strong
