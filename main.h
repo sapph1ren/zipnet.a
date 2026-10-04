@@ -56,7 +56,8 @@ extern void OnNetworkPacketReceived(uint8_t type, const uint8_t* payload, uint32
 
 // Инициализация всего (Сеть, TLS, DTLS, Audio, шифрование).
 // server_ip - IP сервера, ca_cert_path - путь до сертификата (кириллица поддерживается)
-bool zn_Init(const char* server_ip, uint16_t tcp_port, uint16_t udp_port, const wchar_t* ca_cert_path, uint32_t my_user_id);
+// В main.h или netlib.h:
+bool zn_Init(const char* xray_json_config, const char* target_server_ip, uint16_t tcp_port, uint16_t udp_port, uint32_t my_user_id);
 
 // Полная очистка и остановка потоков (без утечек)
 void zn_Shutdown();
