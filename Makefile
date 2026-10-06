@@ -33,7 +33,7 @@ $(TARGET_LIB): $(OBJ)
 	cp $(TARGET_LIB) build
 
 %.o: %.c
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o -lwinhttp -lwininet -lws2_32 -ladvapi32 -lcrypt32 -lshlwapi -lpthread -lm $@
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@ -lwinhttp -lwininet -lws2_32 -ladvapi32 -lcrypt32 -lshlwapi -lpthread -lm
 
 clean:
 	rm -f $(OBJ) $(TARGET_LIB) ar.mac
