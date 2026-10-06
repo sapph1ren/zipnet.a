@@ -1394,8 +1394,8 @@ ZEXTERN gzFile ZEXPORT gzopen(const char *path, const char *mode);
    errno can be checked to determine if the reason gzopen failed was that the
    file could not be opened. Note that if 'N' is in mode for non-blocking, the
    open() itself can fail in order to not block. In that case gzopen() will
-   return NULL and errno will be EAGAIN or ENONBLOCK. The call to gzopen() can
-   then be re-tried. If the application would like to block on opening the
+   return NULL and errno will be EAGAIN or EWOULDBLOCK. The call to gzopen()
+   can then be re-tried. If the application would like to block on opening the
    file, then it can use open() without O_NONBLOCK, and then gzdopen() with the
    resulting file descriptor and 'N' in the mode, which will set it to non-
    blocking.
@@ -1569,7 +1569,7 @@ ZEXTERN int ZEXPORTVA gzprintf();
    these possibilities can be determined using zlibCompileFlags().
 
      If a Z_BUF_ERROR is returned, then nothing was written due to a stall on
-   the non-blocking write destination.
+   the non-blocking write destination. The operation can be retried.
 */
 
 ZEXTERN int ZEXPORT gzputs(gzFile file, const char *s);
@@ -1677,7 +1677,9 @@ ZEXTERN z_off_t ZEXPORT gzseek(gzFile file,
      gzseek returns the resulting offset location as measured in bytes from
    the beginning of the uncompressed stream, or -1 in case of error, in
    particular if the file is opened for writing and the new starting position
-   would be before the current position.
+   would be before the current position, or if the resulting position would
+   not be representable in the offset type. If gzseek returns -1, the stream
+   position is unchanged.
 */
 
 ZEXTERN int ZEXPORT gzrewind(gzFile file);

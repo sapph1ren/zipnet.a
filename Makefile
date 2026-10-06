@@ -1,48 +1,40 @@
-CC      = gcc
-AR      = ar
+CC = gcc
+AR = ar
 ARFLAGS = rcs
-
-TARGET_EXEC = app.exe
-TARGET_LIB  = libzipnet.a
-TARGET_DLL  = libzipnetdll.dll
+TARGET_LIB = libzipnet.a
 
 SRC = main.c
 OBJ = $(SRC:.c=.o)
 
-CFLAGS = -Wall -Wextra -DWIN32_LEAN_AND_MEAN -std=c17 -O3 -fno-plt -ffunction-sections -fdata-sections -fno-ident -fstack-protector-strong -Wimplicit-function-declaration -w -DNDEBUG -I. -I./wolfssl -DWOLFSSL_USER_SETTINGS
+CFLAGS = -Wall -Wextra -s -DWIN32_LEAN_AND_MEAN -std=c17 -O3 \
+         -fno-plt -ffunction-sections -fdata-sections -fno-ident \
+         -fstack-protector-strong -Wimplicit-function-declaration -w \
+         -DNDEBUG -I. -I./wolfssl -DWOLFSSL_USER_SETTINGS -DBUILD_AS_LIBRARY
 
 INCLUDES = -I.
 
-LIBS = -lwolfssl -lz -lopus -lminiaudio -lws2_32 -lcrypt32 -lwinmm
+# Пути к вашим статическим библиотекам (измените путь к папке, если они лежат не в libs/)
+STATIC_LIBS = libs/libwolfssl.a libs/libz.a libs/libopus.a libs/libminizip.a libs/libxray.a 
 
-.PHONY: all clean exec lib dll
 
-all: lib
+.PHONY: all clean
 
-exec: $(TARGET_EXEC)
+all: $(TARGET_LIB)
 
-$(TARGET_EXEC): $(SRC)
-	$(CC) $(CFLAGS) $(INCLUDES) $(SRC) -o $@ $(LIBS)
-	@echo "[+] Executable successfully built: $(TARGET_EXEC)"
-	./$(TARGET_EXEC)
-
-lib: $(TARGET_LIB)
-
-$(TARGET_LIB): CFLAGS += -DBUILD_AS_LIBRARY
 $(TARGET_LIB): $(OBJ)
-	$(AR) $(ARFLAGS) $@ $<
-	@echo "[+] Static library successfully built: $(TARGET_LIB)"
-
-dll: $(TARGET_DLL)
-
-$(TARGET_DLL): CFLAGS += -DBUILD_AS_LIBRARY -D_BUILD_DLL
-$(TARGET_DLL): $(SRC)
-	$(CC) -shared $(CFLAGS) $(INCLUDES) $(SRC) -o $@ $(LIBS)
-	@echo "[+] Shared library successfully built: $(TARGET_DLL)"
+	@echo "CREATE $@" > ar.mac
+	@echo "ADDMOD $(OBJ)" >> ar.mac
+	@$(foreach lib,$(STATIC_LIBS),echo "ADDLIB $(lib)" >> ar.mac;)
+	@echo "SAVE" >> ar.mac
+	@echo "END" >> ar.mac
+	$(AR) -M < ar.mac
+	rm -f ar.mac
+	@mkdir -p build
+	cp $(TARGET_LIB) build
 
 %.o: %.c
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o -lwinhttp -lwininet -lws2_32 -ladvapi32 -lcrypt32 -lshlwapi -lpthread -lm $@
 
 clean:
-	rm -f $(OBJ) $(TARGET_EXEC) $(TARGET_LIB) $(TARGET_DLL)
-	@echo "[+] Clean complete."
+	rm -f $(OBJ) $(TARGET_LIB) ar.mac
+	rm -rf build
