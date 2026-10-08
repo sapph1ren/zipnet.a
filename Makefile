@@ -9,11 +9,10 @@ OBJ = $(SRC:.c=.o)
 CFLAGS = -Wall -Wextra -s -DWIN32_LEAN_AND_MEAN -std=c17 -O3 \
          -fno-plt -ffunction-sections -fdata-sections -fno-ident \
          -fstack-protector-strong -Wimplicit-function-declaration -w \
-         -DNDEBUG -I. -I./wolfssl -DWOLFSSL_USER_SETTINGS -DBUILD_AS_LIBRARY
+         -DNDEBUG -I. -I./wolfssl -DWOLFSSL_USER_SETTINGS -DBUILD_AS_LIBRARY -DCURL_STATICLIB
 
 INCLUDES = -I.
 
-# Пути к вашим статическим библиотекам (измените путь к папке, если они лежат не в libs/)
 STATIC_LIBS = libs/libwolfssl.a libs/libz.a libs/libopus.a libs/libminizip.a libs/libxray.a 
 
 
@@ -33,7 +32,7 @@ $(TARGET_LIB): $(OBJ)
 	cp $(TARGET_LIB) build
 
 %.o: %.c
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@ -lwinhttp -lwininet -lws2_32 -ladvapi32 -lcrypt32 -lshlwapi -lpthread -lm
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@ -lwinhttp -lwininet -lcurl -lws2_32 -ladvapi32 -lsecur32 -lwldap32 -lnghttp2 -lnghttp3 -lngtcp2 -lngtcp2_crypto_ossl -lzstd -lbrotlidedec -lbrotlicommon -lssh2 -lidn2 -lpsl -lssl -lcrypto -lbcrypt -lcrypt32 -lshlwapi -lpthread -lm
 
 clean:
 	rm -f $(OBJ) $(TARGET_LIB) ar.mac

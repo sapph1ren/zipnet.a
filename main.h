@@ -34,6 +34,7 @@ bool decompress_file(FILE *src, FILE *dst);
 extern void process_tcp_data(const unsigned char* data, int length);
 extern void process_udp_data(const unsigned char* data, int length);
 
+uint32_t zn_GetUID(char* bdu);
 
 bool zn_Init(uint32_t uid, const char* login, const char* bdu);
 

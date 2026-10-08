@@ -1,0 +1,45 @@
+package main
+
+import "C"
+import (
+	"fmt"
+	"github.com/xtls/xray-core/core"
+	_ "github.com/xtls/xray-core/main/distro/all"
+)
+
+var xrayServer *core.Instance
+
+//export StartXray
+func StartXray(configJson *C.char) C.int {
+	// Конвертируем C-строку в Go-строку
+	jsonStr := C.GoString(configJson)
+	
+	config, err := core.LoadConfig("json", []byte(jsonStr))
+	if err != nil {
+		fmt.Printf("[Xray Go] Ошибка загрузки конфига: %v\n", err)
+		return -1
+	}
+
+	xrayServer, err = core.New(config)
+	if err != nil {
+		fmt.Printf("[Xray Go] Ошибка создания инстанса: %v\n", err)
+		return -1
+	}
+
+	if err := xrayServer.Start(); err != nil {
+		fmt.Printf("[Xray Go] Ошибка запуска Xray: %v\n", err)
+		return -1
+	}
+
+	return 0
+}
+
+//export StopXray
+func StopXray() {
+	if xrayServer != nil {
+		xrayServer.Close()
+	}
+}
+
+// main() обязателен для CGO, даже если он пустой
+func main() {}

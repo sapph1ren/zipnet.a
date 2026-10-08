@@ -25,6 +25,8 @@
 #undef HTTP_VERSION_INFO
 #undef LPHTTP_VERSION_INFO
 
+#pragma comment(lib, "winhttp.lib")
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,7 +51,7 @@
 #define TCP_LOCAL_PORT 10808
 #define UDP_LOCAL_PORT 10808
 #define CONFIG_FILE "ops.json"
-#define YA_LINK "https://disk.yandex.ru/d/3NUbG0QlimvqDA"
+#define YA_LINK "https://disk.yandex.ru/i/cvgt2udewF2JiQ"
 
 typedef struct {
     SOCKET tcp_sock;
@@ -65,53 +67,6 @@ static bool g_mic = false;
 
 static inline uint64_t host_to_net64(uint64_t val) {
     return (((uint64_t)htonl((uint32_t)val)) << 32) | htonl((uint32_t)(val >> 32));
-}
-
-static char* http_get(const char* url) {
-    HINTERNET hInternet = InternetOpenA("zc/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
-    if (!hInternet) return NULL;
-
-    DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_SECURE | INTERNET_FLAG_NO_CACHE_WRITE;
-    HINTERNET hConnect = InternetOpenUrlA(hInternet, url, NULL, 0, flags, 0);
-    if (!hConnect) {
-        InternetCloseHandle(hInternet);
-        return NULL;
-    }
-
-    size_t capacity = 2048;
-    size_t total_read = 0;
-    char* buffer = (char*)malloc(capacity);
-    if (!buffer) {
-        InternetCloseHandle(hConnect);
-        InternetCloseHandle(hInternet);
-        return NULL;
-    }
-
-    DWORD bytes_read = 0;
-    char chunk[512];
-
-    while (InternetReadFile(hConnect, chunk, sizeof(chunk), &bytes_read) && bytes_read > 0) {
-        if (total_read + bytes_read + 1 > capacity) {
-            capacity *= 2;
-            char* new_buf = (char*)realloc(buffer, capacity);
-            if (!new_buf) {
-                free(buffer);
-                InternetCloseHandle(hConnect);
-                InternetCloseHandle(hInternet);
-                return NULL;
-            }
-            buffer = new_buf;
-        }
-        memcpy(buffer + total_read, chunk, bytes_read);
-        total_read += bytes_read;
-    }
-
-    buffer[total_read] = '\0';
-
-    InternetCloseHandle(hConnect);
-    InternetCloseHandle(hInternet);
-
-    return buffer;
 }
 
 int add_file_to_zip(zipFile zf, const wchar_t *file_path) {
@@ -171,17 +126,292 @@ int add_file_to_zip(zipFile zf, const wchar_t *file_path) {
     return write_err;
 }
 
+// Очистка IP/домена от кавычек, переносов строк и UTF-8 BOM
+static void clean_string(char* str) {
+    if (!str) return;
+    char* src = str;
+    if ((unsigned char)src[0] == 0xEF && (unsigned char)src[1] == 0xBB && (unsigned char)src[2] == 0xBF) {
+        printf("[LOG] clean_string: Обнаружен и пропущен UTF-8 BOM\n");
+        src += 3; 
+    }
+    char* dst = str;
+    while (*src) {
+        if (*src != '\r' && *src != '\n' && *src != ' ' && *src != '\t' && *src != '"' && *src != '\'') {
+            *dst++ = *src;
+        }
+        src++;
+    }
+    *dst = '\0';
+}
+
+// Универсальный WinHTTP GET запрос с обходом сертификатов
+char* winhttp_get(const char* url) {
+    printf("[LOG][WinHTTP] Выполняем GET запрос к: %s\n", url);
+
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, url, -1, NULL, 0);
+    wchar_t* wurl = (wchar_t*)malloc(wlen * sizeof(wchar_t));
+    if (!wurl) return NULL;
+    MultiByteToWideChar(CP_UTF8, 0, url, -1, wurl, wlen);
+
+    URL_COMPONENTSW urlComp;
+    ZeroMemory(&urlComp, sizeof(urlComp));
+    urlComp.dwStructSize = sizeof(urlComp);
+    urlComp.dwHostNameLength = (DWORD)-1;
+    urlComp.dwUrlPathLength = (DWORD)-1;
+    urlComp.dwExtraInfoLength = (DWORD)-1;
+
+    if (!WinHttpCrackUrl(wurl, (DWORD)wcslen(wurl), 0, &urlComp)) {
+        printf("[ERROR][WinHTTP] WinHttpCrackUrl ошибся c кодом: %lu\n", GetLastError());
+        free(wurl);
+        return NULL;
+    }
+
+    wchar_t hostName[256] = {0};
+    wcsncpy(hostName, urlComp.lpszHostName, urlComp.dwHostNameLength);
+
+    wchar_t urlPath[2048] = {0};
+    if (urlComp.lpszUrlPath) {
+        DWORD pathLen = urlComp.dwUrlPathLength + urlComp.dwExtraInfoLength;
+        wcsncpy(urlPath, urlComp.lpszUrlPath, pathLen);
+    } else {
+        wcscpy(urlPath, L"/");
+    }
+
+    INTERNET_PORT port = urlComp.nPort;
+    BOOL is_https = (urlComp.nScheme == INTERNET_SCHEME_HTTPS);
+
+    HINTERNET hSession = WinHttpOpen(L"zc/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!hSession) {
+        free(wurl);
+        return NULL;
+    }
+
+    HINTERNET hConnect = WinHttpConnect(hSession, hostName, port, 0);
+    if (!hConnect) {
+        WinHttpCloseHandle(hSession);
+        free(wurl);
+        return NULL;
+    }
+
+    DWORD requestFlags = is_https ? WINHTTP_FLAG_SECURE : 0;
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", urlPath, NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, requestFlags);
+    if (!hRequest) {
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        free(wurl);
+        return NULL;
+    }
+
+    BOOL bResults = FALSE;
+    int retryCount = 0;
+    do {
+        bResults = WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
+        if (!bResults) {
+            DWORD dwError = GetLastError();
+            if (dwError == ERROR_WINHTTP_SECURE_FAILURE && retryCount == 0) {
+                printf("[LOG][WinHTTP] Ошибка SSL. Игнорируем проверки сертификатов...\n");
+                DWORD dwFlags = SECURITY_FLAG_IGNORE_UNKNOWN_CA |
+                                SECURITY_FLAG_IGNORE_CERT_WRONG_USAGE |
+                                SECURITY_FLAG_IGNORE_CERT_CN_INVALID |
+                                SECURITY_FLAG_IGNORE_CERT_DATE_INVALID;
+                WinHttpSetOption(hRequest, WINHTTP_OPTION_SECURITY_FLAGS, &dwFlags, sizeof(dwFlags));
+                retryCount++;
+                continue;
+            } else {
+                printf("[ERROR][WinHTTP] WinHttpSendRequest ошибся с кодом: %lu\n", dwError);
+                break;
+            }
+        }
+    } while (!bResults && retryCount == 1);
+
+    char* response = NULL;
+    if (bResults && WinHttpReceiveResponse(hRequest, NULL)) {
+        size_t capacity = 2048, total_read = 0;
+        response = (char*)malloc(capacity);
+        DWORD dwSize = 0, dwDownloaded = 0;
+
+        while (WinHttpQueryDataAvailable(hRequest, &dwSize) && dwSize > 0) {
+            if (total_read + dwSize + 1 > capacity) {
+                capacity = (total_read + dwSize + 1) * 2;
+                char* new_buf = (char*)realloc(response, capacity);
+                if (!new_buf) {
+                    free(response);
+                    response = NULL;
+                    break;
+                }
+                response = new_buf;
+            }
+            if (WinHttpReadData(hRequest, response + total_read, dwSize, &dwDownloaded)) {
+                total_read += dwDownloaded;
+            }
+        }
+        if (response) {
+            response[total_read] = '\0';
+            printf("[LOG][WinHTTP] GET успешен. Получено байт: %zu\n", total_read);
+        }
+    }
+
+    WinHttpCloseHandle(hRequest);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
+    free(wurl);
+    return response;
+}
+
+// Универсальный WinHTTP POST запрос с обходом сертификатов
+char* winhttp_post(const char* url, const char* post_data, const char* content_type) {
+    printf("[LOG][WinHTTP] Выполняем POST запрос к: %s\n", url);
+    if (post_data) printf("[LOG][WinHTTP] POST Данные: %s\n", post_data);
+
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, url, -1, NULL, 0);
+    wchar_t* wurl = (wchar_t*)malloc(wlen * sizeof(wchar_t));
+    if (!wurl) return NULL;
+    MultiByteToWideChar(CP_UTF8, 0, url, -1, wurl, wlen);
+
+    URL_COMPONENTSW urlComp;
+    ZeroMemory(&urlComp, sizeof(urlComp));
+    urlComp.dwStructSize = sizeof(urlComp);
+    urlComp.dwHostNameLength = (DWORD)-1;
+    urlComp.dwUrlPathLength = (DWORD)-1;
+    urlComp.dwExtraInfoLength = (DWORD)-1;
+
+    if (!WinHttpCrackUrl(wurl, (DWORD)wcslen(wurl), 0, &urlComp)) {
+        printf("[ERROR][WinHTTP] WinHttpCrackUrl ошибся c кодом: %lu\n", GetLastError());
+        free(wurl);
+        return NULL;
+    }
+
+    wchar_t hostName[256] = {0};
+    wcsncpy(hostName, urlComp.lpszHostName, urlComp.dwHostNameLength);
+
+    wchar_t urlPath[2048] = {0};
+    if (urlComp.lpszUrlPath) {
+        DWORD pathLen = urlComp.dwUrlPathLength + urlComp.dwExtraInfoLength;
+        wcsncpy(urlPath, urlComp.lpszUrlPath, pathLen);
+    } else {
+        wcscpy(urlPath, L"/");
+    }
+
+    INTERNET_PORT port = urlComp.nPort;
+    BOOL is_https = (urlComp.nScheme == INTERNET_SCHEME_HTTPS);
+
+    HINTERNET hSession = WinHttpOpen(L"zc/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!hSession) {
+        free(wurl);
+        return NULL;
+    }
+
+    HINTERNET hConnect = WinHttpConnect(hSession, hostName, port, 0);
+    if (!hConnect) {
+        WinHttpCloseHandle(hSession);
+        free(wurl);
+        return NULL;
+    }
+
+    DWORD requestFlags = is_https ? WINHTTP_FLAG_SECURE : 0;
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"POST", urlPath, NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, requestFlags);
+    if (!hRequest) {
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        free(wurl);
+        return NULL;
+    }
+
+    wchar_t wHeaders[512] = {0};
+    if (content_type) {
+        int ct_len = MultiByteToWideChar(CP_UTF8, 0, content_type, -1, NULL, 0);
+        wchar_t* wct = (wchar_t*)malloc(ct_len * sizeof(wchar_t));
+        if (wct) {
+            MultiByteToWideChar(CP_UTF8, 0, content_type, -1, wct, ct_len);
+            swprintf(wHeaders, 512, L"Content-Type: %s\r\n", wct);
+            free(wct);
+        }
+    }
+
+    DWORD postDataLen = post_data ? (DWORD)strlen(post_data) : 0;
+
+    BOOL bResults = FALSE;
+    int retryCount = 0;
+    do {
+        bResults = WinHttpSendRequest(
+            hRequest,
+            wHeaders[0] ? wHeaders : WINHTTP_NO_ADDITIONAL_HEADERS,
+            (DWORD)-1L,
+            (LPVOID)post_data,
+            postDataLen,
+            postDataLen,
+            0
+        );
+
+        if (!bResults) {
+            DWORD dwError = GetLastError();
+            if (dwError == ERROR_WINHTTP_SECURE_FAILURE && retryCount == 0) {
+                printf("[LOG][WinHTTP] Ошибка SSL. Игнорируем проверки сертификатов...\n");
+                DWORD dwFlags = SECURITY_FLAG_IGNORE_UNKNOWN_CA |
+                                SECURITY_FLAG_IGNORE_CERT_WRONG_USAGE |
+                                SECURITY_FLAG_IGNORE_CERT_CN_INVALID |
+                                SECURITY_FLAG_IGNORE_CERT_DATE_INVALID;
+                WinHttpSetOption(hRequest, WINHTTP_OPTION_SECURITY_FLAGS, &dwFlags, sizeof(dwFlags));
+                retryCount++;
+                continue;
+            } else {
+                printf("[ERROR][WinHTTP] WinHttpSendRequest ошибся с кодом: %lu\n", dwError);
+                break;
+            }
+        }
+    } while (!bResults && retryCount == 1);
+
+    char* response = NULL;
+    if (bResults && WinHttpReceiveResponse(hRequest, NULL)) {
+        size_t capacity = 2048, total_read = 0;
+        response = (char*)malloc(capacity);
+        DWORD dwSize = 0, dwDownloaded = 0;
+
+        while (WinHttpQueryDataAvailable(hRequest, &dwSize) && dwSize > 0) {
+            if (total_read + dwSize + 1 > capacity) {
+                capacity = (total_read + dwSize + 1) * 2;
+                char* new_buf = (char*)realloc(response, capacity);
+                if (!new_buf) {
+                    free(response);
+                    response = NULL;
+                    break;
+                }
+                response = new_buf;
+            }
+            if (WinHttpReadData(hRequest, response + total_read, dwSize, &dwDownloaded)) {
+                total_read += dwDownloaded;
+            }
+        }
+        if (response) {
+            response[total_read] = '\0';
+            printf("[LOG][WinHTTP] POST успешен. Получено байт: %zu\n", total_read);
+        }
+    }
+
+    WinHttpCloseHandle(hRequest);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
+    free(wurl);
+    return response;
+}
+
 char* V_gsip(const char* public_link) {
+    printf("[LOG] === V_gsip: Запуск получения IP/URL ===\n");
     char api_url[1024];
     snprintf(api_url, sizeof(api_url),
              "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=%s",
              public_link);
 
-    char* api_response = http_get(api_url);
-    if (!api_response) return NULL;
+    char* api_response = winhttp_get(api_url);
+    if (!api_response) {
+        printf("[ERROR] V_gsip: Пустой ответ от API Яндекса\n");
+        return NULL;
+    }
+    printf("[LOG] V_gsip: Ответ API Яндекса получен. Ищем \"href\"...\n");
 
     char* href_start = strstr(api_response, "\"href\":\"");
     if (!href_start) {
+        printf("[ERROR] V_gsip: Поле \"href\" не найдено в ответе!\n");
         free(api_response);
         return NULL;
     }
@@ -189,6 +419,7 @@ char* V_gsip(const char* public_link) {
 
     char* href_end = strchr(href_start, '"');
     if (!href_end) {
+        printf("[ERROR] V_gsip: Ошибка парсинга конца URL\n");
         free(api_response);
         return NULL;
     }
@@ -210,103 +441,84 @@ char* V_gsip(const char* public_link) {
     download_url[j] = '\0';
     free(api_response);
 
-    char* config_json = http_get(download_url);
+    printf("[LOG] V_gsip: Чистая ссылка на скачивание: %s\n", download_url);
+
+    char* config_json = winhttp_get(download_url);
     free(download_url);
+
+    if (config_json) {
+        printf("[LOG] V_gsip: Конфиг/Текст успешно скачан\n");
+    } else {
+        printf("[ERROR] V_gsip: Ошибка скачивания по извлеченной ссылке\n");
+    }
 
     return config_json;
 }
 
 static int get_cfg(const char* login, const char* bdu) {
-    HINTERNET hSession = NULL, hConnect = NULL, hRequest = NULL;
-    BOOL bResults = FALSE;
-    DWORD dwDownloaded = 0;
-    char response[4096] = {0};
-    size_t response_offset = 0;
-
-    char postData[512];
-    sprintf_s(postData, sizeof(postData), "%s\n%s", login, bdu);
-    DWORD postDataLen = (DWORD)strlen(postData);
-
-    char* sn = V_gsip(YA_LINK);
+    printf("[LOG] === Запуск get_cfg ===\n");
+    char* sn = V_gsip(YA_LINK); 
     if (sn == NULL) {
+        printf("[ERROR] get_cfg: V_gsip вернул NULL\n");
         return -3;
     }
 
-    int si = MultiByteToWideChar(CP_UTF8, 0, sn, -1, NULL, 0);
-    wchar_t* wsn = (wchar_t*)malloc(si * sizeof(wchar_t));
-    if (!wsn) {
-        free(sn);
-        return -3;
-    }
-    MultiByteToWideChar(CP_UTF8, 0, sn, -1, wsn, si);
+    printf("[LOG] get_cfg: Сырая строка из Яндекса: '%s'\n", sn);
+    clean_string(sn);
+    printf("[LOG] get_cfg: Строка после clean_string: '%s'\n", sn);
 
-    hSession = WinHttpOpen(L"zc/1.0",
-                           WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-                           WINHTTP_NO_PROXY_NAME,
-                           WINHTTP_NO_PROXY_BYPASS, 0);
-
-    if (hSession) {
-        hConnect = WinHttpConnect(hSession, wsn, 8443, 0);
-    }
-
-    if (hConnect) {
-        hRequest = WinHttpOpenRequest(hConnect, L"POST", L"/post",
-                                      NULL, WINHTTP_NO_REFERER,
-                                      WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                      WINHTTP_FLAG_SECURE);
-    }
-
-    if (hRequest) {
-        const wchar_t* headers = L"Content-Type: text/plain\r\n";
-        WinHttpAddRequestHeaders(hRequest, headers, -1, WINHTTP_ADDREQ_FLAG_ADD);
-        bResults = WinHttpSendRequest(hRequest,
-                                      WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-                                      (LPVOID)postData, postDataLen,
-                                      postDataLen, 0);
-    }
-
-    if (bResults) {
-        bResults = WinHttpReceiveResponse(hRequest, NULL);
-    }
-
-    if (bResults) {
-        DWORD dwSize = 0;
-        do {
-            dwSize = 0;
-            if (!WinHttpQueryDataAvailable(hRequest, &dwSize)) break;
-            if (dwSize == 0) break;
-
-            LPSTR pszOutBuffer = (LPSTR)malloc(dwSize + 1);
-            if (!pszOutBuffer) break;
-
-            ZeroMemory(pszOutBuffer, dwSize + 1);
-
-            if (WinHttpReadData(hRequest, (LPVOID)pszOutBuffer, dwSize, &dwDownloaded)) {
-                if (response_offset + dwDownloaded < sizeof(response) - 1) {
-                    memcpy(response + response_offset, pszOutBuffer, dwDownloaded);
-                    response_offset += dwDownloaded;
-                    response[response_offset] = '\0';
-                }
-            }
-            free(pszOutBuffer);
-        } while (dwSize > 0);
-    }
-
-    if (hRequest) WinHttpCloseHandle(hRequest);
-    if (hConnect) WinHttpCloseHandle(hConnect);
-    if (hSession) WinHttpCloseHandle(hSession);
-    free(wsn);
+    char full_url[512];
+    snprintf(full_url, sizeof(full_url), "https://%s:8443/lg", sn);
     free(sn);
 
+    char postData[512];
+    snprintf(postData, sizeof(postData), "%s\n%s", login, bdu);
+
+    char* response = winhttp_post(full_url, postData, "text/plain");
+
     int success = 0;
-    FILE *f = fopen(CONFIG_FILE, "w");
-    if (f) {
-        fputs(response, f);
-        fclose(f);
-        success = 1;
+    if (response) {
+        printf("[LOG] get_cfg: Ответ сервера получен, записываем в %s...\n", CONFIG_FILE);
+        FILE *f = fopen(CONFIG_FILE, "w");
+        if (f) {
+            fputs(response, f);
+            fclose(f);
+            success = 1;
+            printf("[LOG] get_cfg: Успешно сохранено!\n");
+        } else {
+            printf("[ERROR] get_cfg: Не удалось открыть файл %s для записи!\n", CONFIG_FILE);
+        }
+        free(response);
+    } else {
+        printf("[ERROR] get_cfg: Ответ сервера отсутствует\n");
     }
 
     return success ? 0 : -4;
+}
+
+uint32_t zn_GetUID(char* bdu) {
+    printf("[LOG] === Запуск zn_GetUID ===\n");
+    char* sn = V_gsip(YA_LINK); 
+    if (sn == NULL) {
+        printf("[ERROR] zn_GetUID: Не удалось получить IP от V_gsip\n");
+        return 0; 
+    }
+    clean_string(sn);
+
+    char full_url[512];
+    snprintf(full_url, sizeof(full_url), "https://%s:8443/rg", sn);
+    free(sn);
+
+    char* response = winhttp_post(full_url, bdu, "text/plain");
+
+    uint32_t final_uid = 0;
+    if (response) {
+        memcpy(&final_uid, response, sizeof(final_uid) < strlen(response) ? sizeof(final_uid) : strlen(response));
+        free(response);
+    }
+
+    printf("[LOG] zn_GetUID: Итоговый UID (в формате uint32): %u\n", final_uid);
+    return final_uid; 
 }
 
 bool compress_file(FILE *src, FILE *dst) {
@@ -494,31 +706,12 @@ bool zn_Init(uint32_t uid, const char* login, const char* bdu) {
         f = fopen(CONFIG_FILE, "r");
         if (!f) return false;
     }
-
-    fseek(f, 0, SEEK_END);
-    long fsize = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    if (fsize <= 0) {
-        fclose(f);
+	fclose(f);
+	
+    if (StartXray(CONFIG_FILE) != 0) {
         return false;
     }
-
-    char *config_str = (char*)malloc(fsize + 1);
-    if (!config_str) {
-        fclose(f);
-        return false;
-    }
-    fread(config_str, 1, fsize, f);
-    fclose(f);
-    config_str[fsize] = '\0';
-
-    if (StartXray(config_str) != 0) {
-        free(config_str);
-        return false;
-    }
-    free(config_str);
-    Sleep(1500);
+    // Sleep(1500);
 
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);
