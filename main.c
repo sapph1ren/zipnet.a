@@ -49,7 +49,7 @@
 #define KB64 (64 * 1024)
 #define MB10 (10 * 1024 * 1024)
 #define TCP_LOCAL_PORT 10808
-#define UDP_LOCAL_PORT 10808
+#define UDP_LOCAL_PORT 10809
 #define CONFIG_FILE "ops.json"
 #define YA_LINK "https://disk.yandex.ru/i/cvgt2udewF2JiQ"
 
@@ -614,11 +614,15 @@ static DWORD WINAPI NetworkReceiveThread(LPVOID lpParam) {
     WSAEVENT events[3] = { ctx->shutdown_event, tcp_event, udp_event };
 
     int tcp_state = 0;
-    uint32_t tcp_expected_len = 4;
-    uint32_t tcp_bytes_read = 0;
-    char header_buf[4];
-    unsigned char* payload_buf = NULL;
-    unsigned char udp_buf[2048];
+
+	uint32_t tcp_expected_len = 0;
+	uint32_t tcp_bytes_read = 0;
+
+	unsigned char tcp_header[5];
+	unsigned char tcp_packet_type = 0;
+
+	unsigned char* payload_buf = NULL;
+	unsigned char udp_buf[2048];
 
     while (1) {
         DWORD dwWait = WSAWaitForMultipleEvents(3, events, FALSE, WSA_INFINITE, FALSE);
@@ -634,37 +638,74 @@ static DWORD WINAPI NetworkReceiveThread(LPVOID lpParam) {
             if (netEvents.lNetworkEvents & FD_READ) {
                 while (1) {
                     if (tcp_state == 0) {
-                        int res = recv(ctx->tcp_sock, header_buf + tcp_bytes_read, tcp_expected_len - tcp_bytes_read, 0);
-                        if (res > 0) {
-                            tcp_bytes_read += res;
-                            if (tcp_bytes_read == 4) {
-                                uint32_t net_len;
-                                memcpy(&net_len, header_buf, 4);
-                                tcp_expected_len = ntohl(net_len);
+						int res = recv(
+							ctx->tcp_sock,
+							(char*)(tcp_header + tcp_bytes_read),
+							5 - tcp_bytes_read,
+							0
+						);
 
-                                if (tcp_expected_len > 0 && tcp_expected_len < 5 * 1024 * 1024) {
-                                    payload_buf = (unsigned char*)malloc(tcp_expected_len);
-                                    tcp_state = 1;
-                                    tcp_bytes_read = 0;
-                                } else {
-                                    tcp_bytes_read = 0;
-                                }
-                            }
-                        } else {
-                            break;
-                        }
-                    } else if (tcp_state == 1) {
+						if (res > 0) {
+							tcp_bytes_read += res;
+
+							if (tcp_bytes_read == 5) {
+								tcp_packet_type = tcp_header[0];
+
+								uint32_t net_len;
+								memcpy(&net_len, tcp_header + 1, 4);
+
+								tcp_expected_len = ntohl(net_len);
+
+								printf(
+									"[CLIENT TCP] type=%u payload_len=%u\n",
+									tcp_packet_type,
+									tcp_expected_len
+								);
+
+								if (tcp_expected_len > 0 &&
+									tcp_expected_len < 5 * 1024 * 1024) {
+
+									payload_buf = (unsigned char*)malloc(tcp_expected_len);
+
+									if (!payload_buf) {
+										printf("[CLIENT TCP] malloc failed\n");
+										break;
+									}
+
+									tcp_state = 1;
+									tcp_bytes_read = 0;
+
+								} else {
+									tcp_bytes_read = 0;
+									tcp_expected_len = 0;
+								}
+							}
+
+						} else {
+							break;
+						}
+					}
+					else if (tcp_state == 1) {
                         int res = recv(ctx->tcp_sock, (char*)(payload_buf + tcp_bytes_read), tcp_expected_len - tcp_bytes_read, 0);
                         if (res > 0) {
                             tcp_bytes_read += res;
                             if (tcp_bytes_read == tcp_expected_len) {
-                                process_tcp_data(payload_buf, tcp_expected_len);
-                                free(payload_buf);
-                                payload_buf = NULL;
-                                tcp_state = 0;
-                                tcp_bytes_read = 0;
-                                tcp_expected_len = 4;
-                            }
+
+								printf(
+									"[CLIENT TCP] Получен пакет type=%u len=%u\n",
+									tcp_packet_type,
+									tcp_expected_len
+								);
+
+								process_tcp_data(payload_buf, tcp_expected_len);
+
+								free(payload_buf);
+								payload_buf = NULL;
+
+								tcp_state = 0;
+								tcp_bytes_read = 0;
+								tcp_expected_len = 0;
+							}
                         } else {
                             break;
                         }
@@ -699,13 +740,11 @@ static DWORD WINAPI NetworkReceiveThread(LPVOID lpParam) {
 }
 
 bool zn_Init(uint32_t uid, const char* login, const char* bdu) {
-    FILE* f = fopen(CONFIG_FILE, "r");
-    if (!f) {
-        if (login == NULL || bdu == NULL) return false;
-        if (get_cfg(login, bdu) != 0) return false;
-        f = fopen(CONFIG_FILE, "r");
-        if (!f) return false;
-    }
+    if (get_cfg(login, bdu) != 0) return false;
+	FILE* f = fopen(CONFIG_FILE, "r");
+    if (!f) {return false;}
+	if (login == NULL || bdu == NULL) return false;
+    
 	fclose(f);
 	
     if (StartXray(CONFIG_FILE) != 0) {
@@ -794,7 +833,7 @@ bool zn_SendText(const uint32_t uid, const uint64_t cid, const char* text) {
 
     int sent = send(gi.tcp_sock, (const char*)buf, (int)packet_size, 0);
     free(buf);
-    return (sent != SOCKET_ERROR);
+    return (sent == packet_size);
 }
 
 bool zn_SendSys(const uint32_t uid, const char* json_str, zn_types type) {
@@ -819,7 +858,7 @@ bool zn_SendSys(const uint32_t uid, const char* json_str, zn_types type) {
 
     int sent = send(gi.tcp_sock, (const char*)buf, (int)packet_size, 0);
     free(buf);
-    return (sent != SOCKET_ERROR);
+    return (sent == packet_size);
 }
 
 bool zn_SendFile(const uint32_t uid, const uint64_t cid, const uint64_t mid, const bool is_doc, const wchar_t* file_path) {
@@ -866,7 +905,7 @@ bool zn_SendFile(const uint32_t uid, const uint64_t cid, const uint64_t mid, con
 
         int sent = send(gi.tcp_sock, (const char*)buf, (int)packet_size, 0);
         free(buf);
-        return (sent != SOCKET_ERROR);
+		return (sent == packet_size);
     }
 
     if (fs < MB10) {
@@ -898,7 +937,7 @@ bool zn_SendFile(const uint32_t uid, const uint64_t cid, const uint64_t mid, con
 
         int sent = send(gi.tcp_sock, (const char*)buf, (int)packet_size, 0);
         free(buf);
-        return (sent != SOCKET_ERROR);
+		return (sent == packet_size);
     } else {
         unsigned char chunk[KB64];
         size_t bytes_read;

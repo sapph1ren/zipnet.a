@@ -1,0 +1,19 @@
+[LOG] === ╨Ч╨░╨┐╤Г╤Б╨║ get_cfg ===
+[LOG] === V_gsip: ╨Ч╨░╨┐╤Г╤Б╨║ ╨┐╨╛╨╗╤Г╤З╨╡╨╜╨╕╤П IP/URL ===
+[LOG][WinHTTP] ╨Т╤Л╨┐╨╛╨╗╨╜╤П╨╡╨╝ GET ╨╖╨░╨┐╤А╨╛╤Б ╨║: https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=https://disk.yandex.ru/i/cvgt2udewF2JiQ
+[LOG][WinHTTP] GET ╤Г╤Б╨┐╨╡╤И╨╡╨╜. ╨Я╨╛╨╗╤Г╤З╨╡╨╜╨╛ ╨▒╨░╨╣╤В: 568
+[LOG] V_gsip: ╨Ю╤В╨▓╨╡╤В API ╨п╨╜╨┤╨╡╨║╤Б╨░ ╨┐╨╛╨╗╤Г╤З╨╡╨╜. ╨Ш╤Й╨╡╨╝ "href"...
+[LOG] V_gsip: ╨з╨╕╤Б╤В╨░╤П ╤Б╤Б╤Л╨╗╨║╨░ ╨╜╨░ ╤Б╨║╨░╤З╨╕╨▓╨░╨╜╨╕╨╡: https://downloader.disk.yandex.ru/disk/5eb6175f019ba9ae1cb2e479d7e350a03b3776855e735dc9c47e3e4bda97e44b/6ac6639c/_yJVOLDQhUGyAIth3sXQXN0WDv60YwtqxNf8SMPtNwplyTz2Yp4XYW3_Jl68pMGxaWSZcSBmeSsFY3_klDVceQ%3D%3D?uid=0&filename=s.json&disposition=attachment&hash=gRsSGAHL/31QZIIg1iohfqYu83VIuiZxZ17svhy0BDZuUEous3yFuhc%2B9ws90liaq/J6bpmRyOJonT3VoXnDag%3D%3D%3A&limit=0&content_type=application%2Foctet-stream&owner_uid=2363471125&fsize=9&hid=d336f3e469a9a438e46397e2192075e6&media_type=executable&tknv=v3&is_direct_zip_experiment=1
+[LOG][WinHTTP] ╨Т╤Л╨┐╨╛╨╗╨╜╤П╨╡╨╝ GET ╨╖╨░╨┐╤А╨╛╤Б ╨║: https://downloader.disk.yandex.ru/disk/5eb6175f019ba9ae1cb2e479d7e350a03b3776855e735dc9c47e3e4bda97e44b/6ac6639c/_yJVOLDQhUGyAIth3sXQXN0WDv60YwtqxNf8SMPtNwplyTz2Yp4XYW3_Jl68pMGxaWSZcSBmeSsFY3_klDVceQ%3D%3D?uid=0&filename=s.json&disposition=attachment&hash=gRsSGAHL/31QZIIg1iohfqYu83VIuiZxZ17svhy0BDZuUEous3yFuhc%2B9ws90liaq/J6bpmRyOJonT3VoXnDag%3D%3D%3A&limit=0&content_type=application%2Foctet-stream&owner_uid=2363471125&fsize=9&hid=d336f3e469a9a438e46397e2192075e6&media_type=executable&tknv=v3&is_direct_zip_experiment=1
+[LOG][WinHTTP] GET ╤Г╤Б╨┐╨╡╤И╨╡╨╜. ╨Я╨╛╨╗╤Г╤З╨╡╨╜╨╛ ╨▒╨░╨╣╤В: 9
+[LOG] V_gsip: ╨Ъ╨╛╨╜╤Д╨╕╨│/╨в╨╡╨║╤Б╤В ╤Г╤Б╨┐╨╡╤И╨╜╨╛ ╤Б╨║╨░╤З╨░╨╜
+[LOG] get_cfg: ╨б╤Л╤А╨░╤П ╤Б╤В╤А╨╛╨║╨░ ╨╕╨╖ ╨п╨╜╨┤╨╡╨║╤Б╨░: '127.0.0.1'
+[LOG] get_cfg: ╨б╤В╤А╨╛╨║╨░ ╨┐╨╛╤Б╨╗╨╡ clean_string: '127.0.0.1'
+[LOG][WinHTTP] ╨Т╤Л╨┐╨╛╨╗╨╜╤П╨╡╨╝ POST ╨╖╨░╨┐╤А╨╛╤Б ╨║: https://127.0.0.1:8443/lg
+[LOG][WinHTTP] POST ╨Ф╨░╨╜╨╜╤Л╨╡: kopatyc
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+[LOG][WinHTTP] ╨Ю╤И╨╕╨▒╨║╨░ SSL. ╨Ш╨│╨╜╨╛╤А╨╕╤А╤Г╨╡╨╝ ╨┐╤А╨╛╨▓╨╡╤А╨║╨╕ ╤Б╨╡╤А╤В╨╕╤Д╨╕╨║╨░╤В╨╛╨▓...
+[LOG][WinHTTP] POST ╤Г╤Б╨┐╨╡╤И╨╡╨╜. ╨Я╨╛╨╗╤Г╤З╨╡╨╜╨╛ ╨▒╨░╨╣╤В: 635
+[LOG] get_cfg: ╨Ю╤В╨▓╨╡╤В ╤Б╨╡╤А╨▓╨╡╤А╨░ ╨┐╨╛╨╗╤Г╤З╨╡╨╜, ╨╖╨░╨┐╨╕╤Б╤Л╨▓╨░╨╡╨╝ ╨▓ ops.json...
+[LOG] get_cfg: ╨г╤Б╨┐╨╡╤И╨╜╨╛ ╤Б╨╛╤Е╤А╨░╨╜╨╡╨╜╨╛!
+[Xray Go] Ошибка загрузки конфига: core: Unable to load config

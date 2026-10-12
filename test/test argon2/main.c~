@@ -1,0 +1,47 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include "argon2.h"
+#include <string.h>
+#include <windows.h>
+#pragma comment(lib, "advapi32.lib")
+
+BOOLEAN WINAPI RtlGenRandom(PVOID RandomBuffer, ULONG RandomBufferLength);
+
+
+int gr(BYTE buffer){
+    if (RtlGenRandom(buffer, sizeof(buffer))) {
+        printf("WINAPI uspeshno gen rand\n");
+        for (size_t i = 0; i < sizeof(buffer); i++) {
+            printf("%02x", buffer[i]);
+        }
+        printf("\n");
+        return 0;
+    } else {
+        fprintf(stderr, "WINAPI gen rand kaka :((()))\n");
+        return 1;
+    }
+	return 0;
+}
+
+int main(){
+	// Настройки Argon2id
+    uint32_t t_cost = 3;           // 3 итерации
+    uint32_t m_cost = 65536;       // 64 MB памяти
+    uint32_t parallelism = 2;      // 2 потока
+    size_t salt_len = 16;
+    size_t hash_len = 32;
+
+	unsigned char salt[16];
+	gr(salt);
+	size_t encoded_len = argon2_encodedlen(t_cost, m_cost, parallelism, salt_len, hash_len, Argon2_id);
+	char *encoded_hash = malloc(encoded_len);
+	int rc = argon2id_hash_encoded(t_cost, m_cost, parallelism, password, strlen(password), salt, salt_len, hash_len, encoded_hash, encoded_len);
+	if (rc != ARGON2_OK) {
+        fprintf(stderr, "Oshipka prirodi - Argon2: %s\n", argon2_error_message(rc));
+		free(encoded_hash);
+	}
+	printf(encoded_hash);
+
+	
+}
+
